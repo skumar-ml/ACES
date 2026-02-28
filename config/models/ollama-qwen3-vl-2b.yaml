@@ -1,0 +1,5 @@
+engine_type: ollama
+model: qwen3-vl:2b
+display_name: Qwen3 VL 2B (Local)
+temperature: 1.0
+# optional: base_url: http://localhost:11434/v1
