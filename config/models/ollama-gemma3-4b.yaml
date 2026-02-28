@@ -1,0 +1,5 @@
+engine_type: ollama
+model: gemma3:4b
+display_name: Gemma 3 4B (Local)
+temperature: 1.0
+# optional: base_url: http://localhost:11434/v1

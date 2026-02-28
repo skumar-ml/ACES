@@ -11,12 +11,13 @@ from rich import print as _print
 
 from agent.src.typedefs import (
     AnthropicParams,
+    BedrockParams,
     EngineParams,
     EngineType,
     GeminiParams,
     HuggingFaceParams,
+    OllamaParams,
     OpenAIParams,
-    BedrockParams,
 )
 
 
@@ -67,6 +68,8 @@ def load_engine_params_from_yaml(file_path: str) -> EngineParams:
         return GeminiParams.from_dict(config_dict)
     elif engine_type == EngineType.HUGGINGFACE:
         return HuggingFaceParams.from_dict(config_dict)
+    elif engine_type == EngineType.OLLAMA:
+        return OllamaParams.from_dict(config_dict)
     else:
         # Fallback to generic EngineParams
         _print(f"[yellow]Using generic EngineParams for {file_path}")

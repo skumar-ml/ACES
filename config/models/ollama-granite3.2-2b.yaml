@@ -1,0 +1,5 @@
+engine_type: ollama
+model: granite3.2-vision:2b
+display_name: Granite 3.2 2B (Local)
+temperature: 1.0
+# optional: base_url: http://localhost:11434/v1

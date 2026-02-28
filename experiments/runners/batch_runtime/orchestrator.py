@@ -182,6 +182,10 @@ class BatchOrchestratorRuntime(BaseEvaluationRuntime):
                     self.provider_deserializers[config_name] = gemini.Deserializer(
                         engine
                     )
+                case EngineType.OLLAMA:
+                    raise ValueError(
+                        "Ollama is for local use only. Use --runtime-type screenshot or headless."
+                    )
                 case _:
                     raise ValueError(f"Unsupported engine type: {engine_type}")
 

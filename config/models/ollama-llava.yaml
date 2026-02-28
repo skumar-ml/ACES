@@ -1,0 +1,5 @@
+engine_type: ollama
+model: llava
+display_name: LLaVA (Local)
+temperature: 1.0
+# optional: base_url: http://localhost:11434/v1

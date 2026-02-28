@@ -145,6 +145,7 @@ class ExperimentData:
             EngineType.GEMINI: 'Google',
             EngineType.HUGGINGFACE: 'HuggingFace',
             EngineType.BEDROCK: "Bedrock",
+            EngineType.OLLAMA: "Ollama",
         }
 
         provider_str = provider_mapping[model_params.engine_type]

@@ -22,6 +22,7 @@ class EngineType(StrEnum):
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     HUGGINGFACE = "huggingface"
+    OLLAMA = "ollama"
 
     @property
     def env_var_prefix(self) -> str:
@@ -37,6 +38,8 @@ class EngineType(StrEnum):
                 return "HUGGINGFACE_API_KEY"
             case EngineType.BEDROCK:
                 return "AWS_ACCESS_KEY_ID"
+            case EngineType.OLLAMA:
+                return "OLLAMA"
         raise ValueError(f"Unknown engine type: {self}")
 
 
@@ -160,6 +163,17 @@ class HuggingFaceParams(EngineParams):
     # HuggingFace-specific fields
     use_cache: bool = Field(True, description="Whether to use caching")
     wait_for_model: bool = Field(False, description="Wait for model to load if not ready")
+
+
+class OllamaParams(EngineParams):
+    """Ollama-specific parameters for local VLM inference."""
+
+    engine_type: EngineType = Field(EngineType.OLLAMA, frozen=True)
+    model: str = Field(..., description="Ollama model name (e.g., llava, llava:13b)")
+    base_url: Optional[str] = Field(
+        None,
+        description="Ollama API base URL (default: http://localhost:11434/v1)",
+    )
 
 
 # ---------------------------------------------------------------- #

@@ -19,6 +19,7 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import ChatHuggingFace
+from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
 from agent.src.config import get_config
@@ -174,6 +175,18 @@ class LMMAgent:
                 timeout=10,
                 **gemini_kwargs,
             )
+        elif engine_type == EngineType.OLLAMA:
+            params_dict = params.to_dict()
+            ollama_kwargs = {
+                "model": model,
+                "temperature": temperature,
+            }
+            if max_tokens:
+                ollama_kwargs["num_predict"] = max_tokens
+            base_url = params_dict.get("base_url")
+            if base_url:
+                ollama_kwargs["base_url"] = base_url
+            return ChatOllama(**ollama_kwargs)
         else:
             raise ValueError(f"Unsupported engine_type: {engine_type}")
 
@@ -321,6 +334,15 @@ class LMMAgent:
                 })
             elif isinstance(self.llm, ChatHuggingFace):
                 # HuggingFace format - varies by model, using OpenAI-like format as default
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url,
+                        "detail": image_detail,
+                    },
+                })
+            elif isinstance(self.llm, ChatOllama):
+                # Ollama uses OpenAI-compatible format
                 content_parts.append({
                     "type": "image_url",
                     "image_url": {
@@ -514,7 +536,7 @@ class LMMAgent:
 
     def raw_message_requests(self) -> RawMessageExchange:
         """ Get raw message requests for batch processing - specific to each engine """
-        if isinstance(self.llm, ChatOpenAI) or isinstance(self.llm, ChatGoogleGenerativeAI):
+        if isinstance(self.llm, ChatOpenAI) or isinstance(self.llm, ChatGoogleGenerativeAI) or isinstance(self.llm, ChatOllama):
             return RawMessageExchange(convert_to_openai_messages(self.messages))
         elif isinstance(self.llm, ChatAnthropic):
             system_msg, formatted_messages = _format_messages(self.messages)

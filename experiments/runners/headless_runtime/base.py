@@ -103,6 +103,9 @@ class HeadlessRuntime(BaseEvaluationRuntime):
             else:
                 _print("[yellow]Warning: GOOGLE_API_KEY not set")
 
+        if EngineType.OLLAMA in engine_types:
+            _print("[green]Ollama (local) support enabled")
+
     @property
     def experiments_iter(self) -> Iterable[ExperimentData]:
         """Return an iterator over experiments from the local dataset."""
@@ -225,6 +228,22 @@ Do not include any other text outside the JSON object."""
                 temperature=temperature,
             )
             from langchain_core.messages import HumanMessage
+            response = chat_model.invoke([HumanMessage(content=prompt)])
+            return response.content.strip()
+
+        elif engine_type == EngineType.OLLAMA:
+            from langchain_ollama import ChatOllama
+            from langchain_core.messages import HumanMessage
+            params_dict = engine_params.to_dict()
+            ollama_kwargs = {
+                "model": model,
+                "temperature": temperature,
+                "num_predict": 1024,
+            }
+            base_url = params_dict.get("base_url")
+            if base_url:
+                ollama_kwargs["base_url"] = base_url
+            chat_model = ChatOllama(**ollama_kwargs)
             response = chat_model.invoke([HumanMessage(content=prompt)])
             return response.content.strip()
 
