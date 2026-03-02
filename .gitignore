@@ -170,3 +170,4 @@ local_datasets/**/screenshots/*
 *.DS_Store
 
 /artifacts/
+screenshots/

@@ -9,10 +9,13 @@ from fastapi.templating import Jinja2Templates
 
 from sandbox.src.state import get_experiment_data
 
+from pathlib import Path
+_SANDBOX_DIR = Path(__file__).resolve().parent
+
 app = FastAPI()
 
-app.mount("/static", StaticFiles(directory="sandbox/static"), name="static")
-templates = Jinja2Templates(directory="sandbox/templates")
+app.mount("/static", StaticFiles(directory=str(_SANDBOX_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(_SANDBOX_DIR / "templates"))
 
 PRODUCTS_PER_PAGE = 30
 DATASET_DIR = '../datasets'
