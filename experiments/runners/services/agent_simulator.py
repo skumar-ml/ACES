@@ -9,6 +9,7 @@ from agent.src.typedefs import EngineParams
 from common.messages import RawMessageExchange
 from experiments.config import ExperimentData
 from experiments.filesystem_environment import FilesystemShoppingEnvironment
+from experiments.utils.dataset_ops import get_screenshots_loader_base
 from experiments.runners.batch_runtime.typedefs import ExperimentResult
 
 
@@ -41,8 +42,7 @@ class AgentSimulator:
         if screenshots_dir is not None:
             self.screenshots_dir = screenshots_dir
         elif local_dataset_path is not None:
-            dataset_dir = Path(local_dataset_path).parent
-            self.screenshots_dir = dataset_dir / "screenshots"
+            self.screenshots_dir = get_screenshots_loader_base(local_dataset_path)
         else:
             self.screenshots_dir = None
 
@@ -67,6 +67,7 @@ class AgentSimulator:
             experiment_number=experiment.experiment_number,
             dataset_name=self.dataset_name,
             remote=self.use_remote,
+            dataset_csv_path=self.local_dataset_path,
         )
 
         logger = None

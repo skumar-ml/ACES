@@ -97,7 +97,7 @@ class TestScreenshotRuntime:
             loader_cls.assert_called_once_with(**expected_call)
             validation_cls.assert_called_once_with(
                 screenshots_dir,
-                str(dataset_path.parent),
+                loader.dataset_name,
                 debug_mode=False,
             )
             assert runtime.validation_service is validation_instance
@@ -171,6 +171,7 @@ class TestScreenshotRuntime:
                 experiment_number=sample_experiment.experiment_number,
                 dataset_name=loader.dataset_name,
                 remote=True,
+                dataset_csv_path=str(dataset_path),
             )
             assert environment is fs_env_instance
 

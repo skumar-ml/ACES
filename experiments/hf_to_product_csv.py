@@ -6,9 +6,14 @@ The HF dataset has many permutations of the same products (different prices, rat
 This script extracts one row per unique product per query, so you can permute the baseline
 yourself for future experiments.
 
+Writes under ``local_datasets/csvs/``, mirroring how screenshots use a top-level ``screenshots/`` tree::
+
+    local_datasets/csvs/products_<dataset>_<subset>/<sanitized_query>/baseline.csv
+
 Usage:
-    python experiments/hf_to_experiment_csv.py --dataset My-Custom-AI/ACE-BB --subset choice_behavior
-    python experiments/hf_to_experiment_csv.py --dataset My-Custom-AI/ACE-BB --subset market_share --limit 100 --output local_datasets/ace_bb_baseline.csv
+    python experiments/hf_to_product_csv.py --dataset My-Custom-AI/ACE-BB --subset choice_behavior
+    python experiments/hf_to_product_csv.py --dataset My-Custom-AI/ACE-BB --subset market_share --limit 100
+    python experiments/hf_to_product_csv.py ... --output-dir local_datasets/csvs/my_catalog
 """
 
 import argparse
@@ -32,11 +37,20 @@ OUTPUT_COLUMNS = ["query", "sku", "title", "url", "image_url", "price", "rating"
 # Columns to exclude from output (HF-specific, not experiment data)
 EXCLUDE_COLUMNS = {"screenshot", "image"}  # screenshot is Image type, not serializable to CSV
 
+BASELINE_FILENAME = "baseline.csv"
+CSVS_SUBDIR = "csvs"
+
+
+def sanitize_path_segment(s: str) -> str:
+    """Safe directory name for a query (aligned with ecommerce-attack test.py)."""
+    out = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in str(s))
+    return out[:80] or "query"
+
 
 def expand_hf_row(row: dict) -> list[dict]:
     """
     Expand a single HuggingFace dataset row (one experiment) into a list of product row dicts.
-    
+
     HF format: scalar columns (query, experiment_label, experiment_number) + sequence columns (lists).
     Scalar columns like brand, color are repeated for each product.
     """
@@ -51,13 +65,13 @@ def expand_hf_row(row: dict) -> list[dict]:
             sequence_columns[k] = v
         else:
             scalar_columns[k] = v
-    
+
     if not sequence_columns:
         return []
-    
+
     num_products = len(next(iter(sequence_columns.values())))
     rows = []
-    
+
     for i in range(num_products):
         r = {"query": query}
         for col_name, col_values in sequence_columns.items():
@@ -68,7 +82,7 @@ def expand_hf_row(row: dict) -> list[dict]:
             out_col = COLUMN_RENAMES.get(col_name, col_name)
             r[out_col] = value
         rows.append(r)
-    
+
     return rows
 
 
@@ -119,10 +133,11 @@ def main():
         help="Dataset split to load (default: data)",
     )
     parser.add_argument(
-        "--output",
+        "--output-dir",
         type=str,
         default=None,
-        help="Output CSV path. Default: local_datasets/<dataset_short>_<subset>.csv",
+        help="Catalog root: per-query folders with baseline.csv live directly under this path "
+        "(default: local_datasets/csvs/products_<dataset>_<subset>/)",
     )
     parser.add_argument(
         "--limit",
@@ -131,13 +146,19 @@ def main():
         help="Limit number of experiments (for debugging)",
     )
     args = parser.parse_args()
-    
+
+    dataset_short = args.dataset.split("/")[-1].lower().replace("-", "_")
+    subset_suffix = f"_{args.subset}" if args.subset else ""
+    catalog_name = f"products_{dataset_short}{subset_suffix}"
+    default_output_dir = Path("local_datasets") / CSVS_SUBDIR / catalog_name
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir
+
     # Load dataset
     if args.subset:
         dataset = load_dataset(args.dataset, args.subset, split=args.split)
     else:
         dataset = load_dataset(args.dataset, split=args.split)
-    
+
     # Expand each row to product rows
     all_rows = []
     experiment_count = 0
@@ -146,11 +167,11 @@ def main():
             break
         all_rows.extend(expand_hf_row(row))
         experiment_count += 1
-    
+
     if not all_rows:
         print("No data extracted. Check dataset structure.")
         return 1
-    
+
     df = pd.DataFrame(all_rows)
     # Exclude specific products (by query) from output
     df = df[df["query"].str.lower().str.replace(" ", "_", regex=False) != "usb_cable"]
@@ -164,18 +185,22 @@ def main():
     elif "sku" in df.columns:
         sort_cols.append("sku")
     df.sort_values(by=sort_cols, inplace=True)
-    
-    # Output path
-    if args.output:
-        output_path = Path(args.output)
-    else:
-        dataset_short = args.dataset.split("/")[-1].lower().replace("-", "_")
-        subset_suffix = f"_{args.subset}" if args.subset else ""
-        output_path = Path("local_datasets") / f"products_{dataset_short}{subset_suffix}.csv"
-    
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_path, index=False)
-    print(f"Wrote {len(df)} unique products ({experiment_count} experiments processed) to {output_path}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    queries_written = []
+    for query_value, group in df.groupby("query", sort=False):
+        query_dir = sanitize_path_segment(query_value)
+        query_path = output_dir / query_dir
+        query_path.mkdir(parents=True, exist_ok=True)
+        out_file = query_path / BASELINE_FILENAME
+        group.to_csv(out_file, index=False)
+        queries_written.append(str(query_path / BASELINE_FILENAME))
+
+    print(
+        f"Wrote {len(queries_written)} query baseline(s) under {output_dir.resolve()} "
+        f"({len(df)} unique products, {experiment_count} experiments processed)"
+    )
+
     return 0
 
 

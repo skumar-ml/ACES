@@ -5,10 +5,12 @@ Tests verify that worker processes are properly isolated and produce unique scre
 for different experiments from the test dataset.
 """
 
-import pytest
-from pathlib import Path
 import hashlib
 import multiprocessing as mp
+import shutil
+from pathlib import Path
+
+import pytest
 
 from experiments.data_loader import load_experiment_data
 from experiments.config import ExperimentData
@@ -86,6 +88,14 @@ def test_dataset_path():
 
 
 @pytest.fixture
+def tmp_parallel_dataset_csv(tmp_path, test_dataset_path):
+    """Copy fixture CSV into tmp so screenshot paths resolve under tmp_path."""
+    dst = tmp_path / "test_parallel_dataset.csv"
+    shutil.copy(test_dataset_path, dst)
+    return dst
+
+
+@pytest.fixture
 def test_experiments(test_dataset_path):
     """Fixture providing loaded test experiments."""
     combined_df = load_experiment_data(str(test_dataset_path))
@@ -112,19 +122,22 @@ def test_experiments(test_dataset_path):
 class TestParallelScreenshotCollection:
     """Test parallel screenshot collection with actual screenshot verification."""
     
-    def test_parallel_screenshots_are_created_and_unique(self, test_experiments, tmp_path):
+    def test_parallel_screenshots_are_created_and_unique(
+        self, test_experiments, tmp_path, tmp_parallel_dataset_csv
+    ):
         """
         Test that queue-based parallel screenshot collection creates unique screenshots for each experiment.
         This is the main integration test that verifies the entire system works correctly.
         """
-        screenshots_dir = tmp_path / "screenshots"
-        
+        dataset_csv_path = str(tmp_parallel_dataset_csv)
+        screenshots_dataset_root = tmp_path / "screenshots" / "test_parallel_dataset"
+
         # Create work items for all 8 experiments in the test dataset
         work_items = []
         for experiment in test_experiments:
             work_item = ScreenshotWorkItem(
                 experiment_data=experiment,
-                screenshots_dir=screenshots_dir
+                dataset_csv_path=dataset_csv_path,
             )
             work_items.append(work_item)
         
@@ -197,8 +210,11 @@ class TestParallelScreenshotCollection:
             "toothpaste_experimental_1.png", "toothpaste_experimental_2.png"
         }
         
-        # Collect all screenshot files
-        for query_dir in screenshots_dir.iterdir():
+        # Collect all screenshot files (flat layout: .../screenshots/<dataset>/<query>/<label>/)
+        assert screenshots_dataset_root.is_dir(), (
+            f"Expected screenshots under {screenshots_dataset_root}"
+        )
+        for query_dir in screenshots_dataset_root.iterdir():
             if query_dir.is_dir():
                 for label_dir in query_dir.iterdir():
                     if label_dir.is_dir():
@@ -305,16 +321,18 @@ class TestParallelScreenshotCollection:
 class TestMemoryIsolation:
     """Test memory isolation between worker processes."""
     
-    def test_worker_isolation_with_different_experiments(self, test_experiments, tmp_path):
+    def test_worker_isolation_with_different_experiments(
+        self, test_experiments, tmp_parallel_dataset_csv
+    ):
         """Test that different workers processing different experiments have unique hashes."""
-        screenshots_dir = tmp_path / "screenshots"
-        
+        dataset_csv_path = str(tmp_parallel_dataset_csv)
+
         # Create work items for first 4 experiments
         work_items = []
         for experiment in test_experiments[:4]:
             work_item = ScreenshotWorkItem(
                 experiment_data=experiment,
-                screenshots_dir=screenshots_dir
+                dataset_csv_path=dataset_csv_path,
             )
             work_items.append(work_item)
         
@@ -334,17 +352,19 @@ class TestMemoryIsolation:
             
             assert len(unique_hashes) == len(hashes), f"Expected all unique hashes for different experiments"
     
-    def test_worker_isolation_with_same_experiment(self, test_experiments, tmp_path):
+    def test_worker_isolation_with_same_experiment(
+        self, test_experiments, tmp_parallel_dataset_csv
+    ):
         """Test that a worker processing the same experiment multiple times produces identical hashes."""
         same_experiment = test_experiments[0]
-        screenshots_dir = tmp_path / "screenshots"
-        
+        dataset_csv_path = str(tmp_parallel_dataset_csv)
+
         # Create 3 work items with the same experiment
         work_items = []
         for i in range(3):
             work_item = ScreenshotWorkItem(
                 experiment_data=same_experiment,
-                screenshots_dir=screenshots_dir
+                dataset_csv_path=dataset_csv_path,
             )
             work_items.append(work_item)
         

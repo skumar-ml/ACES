@@ -14,7 +14,10 @@ from agent.src.types import TargetSite
 from experiments.config import ExperimentData
 from experiments.server import start_fastapi_server, stop_fastapi_server
 from experiments.data_loader import experiments_iter
-from experiments.utils.dataset_ops import get_dataset_name
+from experiments.utils.dataset_ops import (
+    get_dataset_name,
+    get_experiment_screenshot_png_path,
+)
 from sandbox import set_experiment_data
 
 
@@ -22,7 +25,8 @@ from sandbox import set_experiment_data
 class ScreenshotWorkItem:
     """Input data for screenshot worker process."""
     experiment_data: ExperimentData
-    screenshots_dir: Path
+    dataset_csv_path: str
+    force_regenerate: bool = False
 
 
 @dataclass
@@ -84,18 +88,15 @@ def get_missing_screenshots(experiments: list[ExperimentData], dataset_path: str
     Returns:
         List of ExperimentData objects for experiments with missing screenshots
     """
-    # Extract dataset name from path
-    dataset_name = get_dataset_name(dataset_path)
-
-    # Base screenshots directory alongside the dataset
-    dataset_dir = Path(dataset_path).parent
-    screenshots_dir = dataset_dir / "screenshots" / dataset_name
-    
     missing_experiments = []
-    
+
     for data in experiments:
-        screenshot_dir = screenshots_dir / data.query / data.experiment_label
-        screenshot_path = screenshot_dir / data.screenshot_filename
+        screenshot_path = get_experiment_screenshot_png_path(
+            dataset_path,
+            data.query,
+            data.experiment_label,
+            data.experiment_number,
+        )
 
         if not is_valid_png(screenshot_path):
             missing_experiments.append(data)
@@ -151,25 +152,19 @@ def collect_screenshots(combined_df: pd.DataFrame, dataset_path: str):
     server_thread = start_fastapi_server()
     atexit.register(stop_fastapi_server)
 
-    # Extract dataset name from path
-    dataset_name = Path(dataset_path).stem.replace('_dataset', '')
-    
-    # Base screenshots directory alongside the dataset
-    dataset_dir = Path(dataset_path).parent
-    screenshots_dir = dataset_dir / "screenshots" / dataset_name
-
     # manually start
     env = ShoppingEnvironment(TargetSite.MOCKAMAZON)
     env._init_driver()
 
+    dataset_name = get_dataset_name(dataset_path)
     for data in experiments_iter(combined_df, dataset_name):
-        # Create directory structure: screenshots/{dataset_name}/{query}/{experiment_label}/
-        screenshot_dir = screenshots_dir / data.query / data.experiment_label
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Filename: {query}_{experiment_label}_{experiment_number}.png
-        filename = f"{data.query}_{data.experiment_label}_{data.experiment_number}.png"
-        screenshot_path = screenshot_dir / filename
+        screenshot_path = get_experiment_screenshot_png_path(
+            dataset_path,
+            data.query,
+            data.experiment_label,
+            data.experiment_number,
+        )
+        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Skip if screenshot already exists and is valid
         if is_valid_png(screenshot_path):
@@ -195,17 +190,22 @@ class WorkerManager:
         self.base_port = base_port
 
     @staticmethod
-    def create_work_items(experiments: list[ExperimentData], screenshots_dir: Path) -> List[ScreenshotWorkItem]:
+    def create_work_items(
+        experiments: list[ExperimentData],
+        dataset_csv_path: str,
+        force_regenerate: bool = False,
+    ) -> List[ScreenshotWorkItem]:
         """Create work items for worker processes."""
         work_items = []
-        
+
         for exp in experiments:
             work_item = ScreenshotWorkItem(
                 experiment_data=exp,
-                screenshots_dir=screenshots_dir
+                dataset_csv_path=dataset_csv_path,
+                force_regenerate=force_regenerate,
             )
             work_items.append(work_item)
-        
+
         return work_items
 
 
@@ -463,7 +463,6 @@ def process_screenshot_item(work_item: ScreenshotWorkItem, worker_id: int, env: 
         ScreenshotWorkResult with processing status
     """
     experiment_data = work_item.experiment_data
-    screenshots_dir = work_item.screenshots_dir
 
     from sandbox import set_experiment_data, get_experiment_data
 
@@ -480,23 +479,29 @@ def process_screenshot_item(work_item: ScreenshotWorkItem, worker_id: int, env: 
     experiment_label = experiment_data.experiment_label
     experiment_number = experiment_data.experiment_number
 
-    # Create screenshot directory
-    screenshot_dir = screenshots_dir / query / experiment_label
-    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_path = get_experiment_screenshot_png_path(
+        work_item.dataset_csv_path,
+        query,
+        experiment_label,
+        experiment_number,
+    )
+    screenshot_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Generate filename
-    filename = f"{query}_{experiment_label}_{experiment_number}.png"
-    screenshot_path = screenshot_dir / filename
-
-    # Skip if screenshot already exists and is valid
+    # Skip if screenshot already exists and is valid (unless forcing regeneration)
     if is_valid_png(screenshot_path):
-        return ScreenshotWorkResult(
-            success=True,
-            worker_id=worker_id,
-            message=f"Skipped existing: {screenshot_path}",
-            experiment_id=experiment_data.experiment_id,
-            experiment_data_hash=actual_hash
-        )
+        if work_item.force_regenerate:
+            try:
+                screenshot_path.unlink()
+            except OSError:
+                pass
+        else:
+            return ScreenshotWorkResult(
+                success=True,
+                worker_id=worker_id,
+                message=f"Skipped existing: {screenshot_path}",
+                experiment_id=experiment_data.experiment_id,
+                experiment_data_hash=actual_hash,
+            )
 
     # Navigate and capture screenshot
     env._navigate_to_product_search(query)
@@ -515,7 +520,14 @@ def process_screenshot_item(work_item: ScreenshotWorkItem, worker_id: int, env: 
     )
 
 
-def collect_screenshots_parallel(experiments: list[ExperimentData], dataset_path: str, num_workers: int = 4, verbose: bool = False, progress_callback=None):
+def collect_screenshots_parallel(
+    experiments: list[ExperimentData],
+    dataset_path: str,
+    num_workers: int = 4,
+    verbose: bool = False,
+    progress_callback=None,
+    force_regenerate: bool = False,
+):
     """
     Queue-based parallel screenshot collection with complete worker isolation.
     
@@ -527,24 +539,23 @@ def collect_screenshots_parallel(experiments: list[ExperimentData], dataset_path
         dataset_path: Path to the dataset file
         num_workers: Number of parallel workers to use (default: 4)
         progress_callback: Optional callback function to report progress (completed)
-    
-    Saves screenshots to filesystem hierarchy alongside the dataset:
-    
-    screenshots/{dataset_name}/{query}/{experiment_label}/
-    └── {query}_{experiment_label}_{experiment_number}.png
-    """
-    # Extract dataset name from path
-    dataset_name = Path(dataset_path).stem.replace('_dataset', '')
-    
-    # Base screenshots directory alongside the dataset
-    dataset_dir = Path(dataset_path).parent
-    screenshots_dir = dataset_dir / "screenshots" / dataset_name
+        force_regenerate: If True, replace existing valid PNGs instead of skipping
 
+    Under ``local_datasets/csvs/<catalog>/<query>/<variant>.csv`` screenshots are written to::
+
+        local_datasets/screenshots/<catalog>/<query>/<variant>/{query}_{label}_{n}.png
+
+    Otherwise (flat layout)::
+
+        {csv_parent}/screenshots/{dataset_name}/{query}/{experiment_label}/...
+    """
     # Initialize worker manager
     worker_manager = WorkerManager(num_workers, base_port=5000)
-    
+
     # Create work items for all experiments (including existing ones, as they'll be skipped)
-    work_items = worker_manager.create_work_items(experiments, screenshots_dir)
+    work_items = worker_manager.create_work_items(
+        experiments, dataset_path, force_regenerate=force_regenerate
+    )
     if verbose:
         _print(f"[dim]Prepared {len(work_items)} work items for processing")
 

@@ -11,7 +11,7 @@ from experiments.data_loader import (ExperimentData, experiments_iter,
 from experiments.runners.batch_runtime.common.encoded_id_mixin import (
     EncodedExperimentIdMixin,
 )
-from experiments.utils.dataset_ops import get_dataset_name
+from experiments.utils.dataset_ops import get_dataset_name, get_screenshots_loader_base
 
 
 class _DatasetSource(ABC):
@@ -41,7 +41,7 @@ class _LocalDatasetSource(_DatasetSource):
     def __init__(self, local_dataset_path: str):
         self.local_dataset_path = local_dataset_path
         self._dataset_name = get_dataset_name(local_dataset_path)
-        self._screenshots_dir = Path(local_dataset_path).parent / 'screenshots'
+        self._screenshots_dir = get_screenshots_loader_base(local_dataset_path)
 
     def get_dataset_name(self) -> str:
         return self._dataset_name

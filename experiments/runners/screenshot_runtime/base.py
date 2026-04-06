@@ -1,7 +1,6 @@
 """Unified screenshot runtime built on shared experiment services."""
 
 import os
-from pathlib import Path
 from typing import Iterable, List, Optional
 
 from rich import print as _print
@@ -70,9 +69,8 @@ class ScreenshotRuntime(BaseEvaluationRuntime):
         self.validation_service: Optional[ScreenshotValidationService] = None
         dataset_path = self.experiment_loader.dataset_path
         if self.screenshots_dir and dataset_path:
-            dataset_dir = Path(dataset_path).parent
             self.validation_service = ScreenshotValidationService(
-                self.screenshots_dir, str(dataset_dir), debug_mode=debug_mode
+                self.screenshots_dir, self.dataset_name, debug_mode=debug_mode
             )
 
         _print(
@@ -96,6 +94,7 @@ class ScreenshotRuntime(BaseEvaluationRuntime):
                 experiment_number=data.experiment_number,
                 dataset_name=self.experiment_loader.dataset_name,
                 remote=self.remote,
+                dataset_csv_path=self.experiment_loader.dataset_path,
             )
 
         screenshot = data.screenshot

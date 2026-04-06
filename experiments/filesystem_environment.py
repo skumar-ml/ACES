@@ -4,6 +4,7 @@ from typing import Optional, Union
 
 from agent.src.environment import BaseShoppingEnvironment
 from experiments.config import ExperimentData
+from experiments.utils.dataset_ops import get_experiment_screenshot_png_path
 
 
 class FilesystemShoppingEnvironment(BaseShoppingEnvironment):
@@ -13,16 +14,26 @@ class FilesystemShoppingEnvironment(BaseShoppingEnvironment):
     This is useful for replaying experiments or testing with pre-captured screenshots.
     """
     
-    def __init__(self, screenshots_dir: Path, query: str, experiment_label: str, experiment_number: int, dataset_name: str, remote: bool):
+    def __init__(
+        self,
+        screenshots_dir: Path,
+        query: str,
+        experiment_label: str,
+        experiment_number: int,
+        dataset_name: str,
+        remote: bool,
+        dataset_csv_path: Optional[str] = None,
+    ):
         """
         Initialize the filesystem environment.
         
         Args:
-            screenshots_dir: Base directory containing screenshots
+            screenshots_dir: Base directory containing screenshots (used when ``dataset_csv_path`` is None)
             query: The product query (e.g., "mousepad")
             experiment_label: The experiment label (e.g., "control")
             experiment_number: The experiment number
             remote: If True, return GCS URLs instead of bytes
+            dataset_csv_path: When set, local PNG path follows :func:`get_experiment_screenshot_png_path`
         """
         self.screenshots_dir = screenshots_dir
         self.remote = remote
@@ -38,8 +49,12 @@ class FilesystemShoppingEnvironment(BaseShoppingEnvironment):
             dataset_name=dataset_name
         )
         
-        # Build the expected screenshot path using ExperimentData methods
-        self.screenshot_path = self.experiment_data.get_local_screenshot_path(screenshots_dir)
+        if dataset_csv_path:
+            self.screenshot_path = get_experiment_screenshot_png_path(
+                dataset_csv_path, query, experiment_label, experiment_number
+            )
+        else:
+            self.screenshot_path = self.experiment_data.get_local_screenshot_path(screenshots_dir)
     
     def capture_screenshot(self) -> Union[bytes, str]:
         """
